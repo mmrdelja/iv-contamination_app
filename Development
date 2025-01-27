@@ -28,7 +28,7 @@ fixdf = fixdf.select_dtypes(exclude=['object'])
 fixdf = fixdf.drop(fixdf.columns[9:12],axis=1)
 fixdf = fixdf[fixdf.columns.drop(list(df.filter(regex='_comment')))]
 
-#Check dimensions. 64 features, 17370 total specimens
+#Check dimensions. 42 features, 17370 total specimens
 print(fixdf.shape)
 
 #split x and y, where x is features and y is classification
