@@ -1,0 +1,176 @@
+# Import required packages/libraries
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import cross_validate
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import matthews_corrcoef,roc_curve, auc
+import matplotlib.pyplot as plt
+
+#Read in dataset as pandas dataframe
+fulldf = pd.read_excel('iv contamination data 122024.xlsx')
+
+#data check
+fulldf.head()
+
+### Processing
+
+#From the columns containing expert review of IV contamination, how many positive and how many negative for contamination
+fulldf['expert_review_prediction'].value_counts()
+
+#Remove all rows from dataframe that is NaN (not a number)
+fixdf = fulldf[fulldf['expert_review_prediction'].notna()]
+
+#Removing unecessary columns from dataset: IDs, collection date and time, extra comments, HIL 
+fixdf = fixdf.select_dtypes(exclude=['object'])
+fixdf = fixdf.drop(fixdf.columns[9:12],axis=1)
+fixdf = fixdf[fixdf.columns.drop(list(df.filter(regex='_comment')))]
+
+#Check dimensions. 64 features, 17370 total specimens
+print(fixdf.shape)
+
+#split x and y, where x is features and y is classification
+x = fixdf.drop('expert_review_prediction', axis = 1)
+y = fixdf['expert_review_prediction']
+# Splitting the dataset into the Training set and Test set using SKLearn, 50:50 split
+X_train, X_test, y_train, y_test = train_test_split(x, y, test_size = 0.5, random_state = 0)
+
+### Testing
+
+#Fit training data to classification model, support vector machine
+from sklearn.svm import SVC
+
+svm = SVC(kernel='linear')
+svm.fit(X_train, y_train)
+#Make prediction using model on new data
+y_pred_svm = svm.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred_svm))
+print(classification_report(y_test, y_pred_svm))
+
+#Repeat above using decision tree
+from sklearn.tree import DecisionTreeClassifier
+
+tree = DecisionTreeClassifier(max_depth=5)
+tree.fit(X_train, y_train)
+#Make prediction using model on new data
+y_pred_tree = tree.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred_tree))
+print(classification_report(y_test, y_pred_tree))
+
+#Repeating above with neural net. lbfgs functions more efficiently here than sgd
+from sklearn.neural_network import MLPClassifier
+X = X_train
+y = y_train
+nnetclf = MLPClassifier(solver='lbfgs',hidden_layer_sizes=(5, 2), random_state=1)
+
+nnetclf.fit(X, y)
+y_pred_net = nnetclf.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred_net))
+print(classification_report(y_test, y_pred_net))
+print_confusion_matrix(y_test, y_pred_net)
+
+### Analysis
+
+#Confusion Matrix to evaluate model classification metrics
+cmsvm = confusion_matrix(y_test, y_pred_svm, labels=svm.classes_)
+cmtree = confusion_matrix(y_test, y_pred_tree, labels=tree.classes_)
+cmnet = confusion_matrix(y_test, y_pred_net, labels=nnetclf.classes_)
+
+#Define function to make a neater confusion matrix
+def print_confusion_matrix(y_true, y_pred):
+    cm = confusion_matrix(y_true, y_pred)
+    print('True positive = ', cm[0][0])
+    print('False positive = ', cm[0][1])
+    print('False negative = ', cm[1][0])
+    print('True negative = ', cm[1][1])
+
+#Use above function to print confusion matrix for different classification models
+print_confusion_matrix(y_test, y_pred_svm)
+print_confusion_matrix(y_test, y_pred_tree)
+print_confusion_matrix(y_test, y_pred_net)
+
+#Classification metrics
+def print_classification_metrics(y_true, y_pred):
+  cm = confusion_matrix(y_true, y_pred)
+  P = cm[0][0]+cm[1][0] # total number of positives in the truth data
+  N = cm[0][1]+cm[1][1] # total number of negatives
+  print(f"Accuracy: {accuracy_score(y_test, y_pred_tree)*100}%")
+  print(f"TPR (sensitivity)=TP/P: {(cm[0][0]/P)*100}%")
+  print(f"TNR (specificity)=TN/N: {(cm[1][1]/N)*100}%")
+  print(f"PPV (precision)=TP/(TP+FP): {(cm[0][0]/(cm[0][0]+cm[0][1])*100)}%")
+  print(f"FDR (false discovery)=1-PPV: {(1-(cm[0][0]/(cm[0][0]+cm[0][1])))*100}%")
+  print(f"FPR =FP/N: {(cm[0][1]/N)*100}%")
+
+#Use above funtion to print list of classification metrics for each model
+print_classification_metrics(y_true, y_pred_svm)
+print_classification_metrics(y_true, y_pred_tree)
+print_classification_metrics(y_true, y_pred_net)
+
+### Cross validation
+#K fold cross validation with 10 repeats, svm
+svmcv_results = cross_validate(svm, X_train,y_train, cv=10,scoring=('accuracy', 'precision', 'recall', 'roc_auc'))
+print(svmcv_results)
+#K fold cross validation with 10 repeats, decision tree
+treecv_results = cross_validate(tree, X_train,y_train, cv=10,scoring=('accuracy', 'precision', 'recall', 'roc_auc'))
+print(treecv_results)
+#K fold cross validation with 10 repeats, neural net
+netcv_results = cross_validate(nnetclf, X_train,y_train, cv=10,scoring=('accuracy', 'precision', 'recall', 'roc_auc'))
+print(netcv_results)
+
+##Matthews correlation coefficient value
+#svm
+matthews_corrcoef(y_test, y_pred_svm)
+#decision tree
+matthews_corrcoef(y_test, y_pred_tree)
+#neural net
+matthews_corrcoef(y_test, y_pred_net)
+
+# Calculate ROC curve, svm
+svmfpr, svmtpr, svmthresholds = roc_curve(y_test, y_pred_svm)
+svmroc_auc = auc(svmfpr, svmtpr)
+
+# Calculate ROC curve, decision tree
+treefpr, treetpr, treethresholds = roc_curve(y_test, y_pred_tree)
+treeroc_auc = auc(treefpr, treetpr)
+
+# Calculate ROC curve, neural net
+netfpr, nettpr, netthresholds = roc_curve(y_test, y_pred_net)
+netroc_auc = auc(netfpr, nettpr)
+
+#Plot for ROC Curve and auROC, SVM
+plt.figure()
+plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % svmroc_auc)
+plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('SVM ROC Curve for IV Contamination Classification')
+plt.legend()
+plt.show()
+
+#Plot for ROC Curve and auROC, decision tree
+plt.figure()
+plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % treeroc_auc)
+plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Decision Tree ROC Curve for IV Contamination Classification')
+plt.legend()
+plt.show()
+
+#Plot for ROC Curve and auROC, neural net
+plt.figure()
+plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % netroc_auc)
+plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Neural Net ROC Curve for IV Contamination Classification')
+plt.legend()
+plt.show()
